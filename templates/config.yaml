@@ -1,0 +1,14 @@
+assembler:
+  {{assembler}}
+min_contig_size:
+  {{min_contig_size}}
+min_contigs:
+  {{min_contigs}}
+chewieCPU:
+  {{cpu}}
+schemaPath:
+  {{schemPath}}
+assemble:
+  {{assemble}}
+workdir:
+  {{workdir}}
