@@ -2,7 +2,6 @@ import pathlib
 import os
 import pandas
 import jinja2
-import sh
 import logging
 import filecmp
 import datetime
