@@ -440,7 +440,7 @@ rule assembly:
             cp temp/contigs.fa {{output}}
             rm -r temp
         elif [ \"{{assembler}}\" == \"shovill-skesa\" ]; then
-            shovill --outdir temp --R1 {{input.r1}} --R2 {{input.r2}} --force --minlen 200 --assembler skesa --opts \"--vector_percent 1\"
+            shovill --outdir temp --R1 {{input.r1}} --R2 {{input.r2}} --force --minlen 200 --assembler skesa 
             cp temp/contigs.fa {{output}}
             rm -r temp
         elif [ \"{{assembler}}\" == \"shovill-velvet\" ]; then
