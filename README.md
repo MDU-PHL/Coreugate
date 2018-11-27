@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/kristyhoran/Coreugate.svg?branch=master)](https://travis-ci.org/kristyhoran/Coreugate)
+
 # COREugate - A pipeline for cgMLST
 ## From reads to cgMLST profile.
 
