@@ -8,3 +8,4 @@ install:
  
 script:
   - python3 setup.py test
+  - coreugate run -h
