@@ -72,9 +72,10 @@ rule chewBBACA:
         ptf = config['ptf'],
         schema = config['schemaPath'],
         chewieCPU = config['chewieCPU']
+    log: "coreugate.log"
     shell:
        	"""
-        chewBBACA.py AlleleCall -i {input.isolate} -g {params.schema} -o chew_temp/ --cpu {chewieCPU} --fc {params.ptf}
+        chewBBACA.py AlleleCall -i {input.isolate} -g {params.schema} -o chew_temp/ --cpu {chewieCPU} --fc {params.ptf} 2> {log}
         echo {wildcards.sample} >> isolates.txt
         mv chew_temp/*/* {wildcards.sample}/
         rm -r chew_temp
@@ -91,45 +92,23 @@ rule combinechewie:
         'overall_statistics.tsv', 'overall_alleles.tsv'
     message:
         'Combining chewBBACA results.'
-    run:
-        import os
-        import pathlib
-
-        out_alleles = pathlib.Path(str(output[1]))
-        out_stats = pathlib.Path(str(output[0]))
-        for i in input:
-            p = pathlib.Path(i)
-            for f in p.iterdir():
-                if f.name == 'results_statistics.tsv':
-                    stat = open(f, 'r')
-                    if not out_stats.exists():
-                        with open(out_stats, 'w') as out:
-                            for l in stat.readlines():
-                                out.write(l)
-                            out.write('\n')
-                    else:
-                        with open(out_stats, 'a') as out:
-                            out.write(stat.readlines()[1])
-                            out.write('\n')
-                if f.name == 'results_alleles.tsv':
-                    allele = open(f, 'r')
-                    if not os.path.exists(output[1]):
-                        with open(output[1], 'w') as out:
-                            for l in allele.readlines():
-                                out.write(l)
-                            out.write('\n')
-                    else:
-                        with open(output[1], 'a') as out:
-                            out.write(allele.readlines()[1])
-                            out.write('\n')
-
+    log: "coreugate.log"
+    params:
+        script_path= config['script_path']
+    shell:
+        """
+        python3 {params.script_path}/combine_chewie.py {input} 2&>1 {log}
+        """
+        
 rule pairwise_dist:
     input:
         'overall_alleles.tsv'
     output:
         'distances.tab'
+    params:
+        script_path = config['script_path']
     shell:
         """
-        Rscript distances.R
+        Rscript {params.script_path}/distances.R
         """
 

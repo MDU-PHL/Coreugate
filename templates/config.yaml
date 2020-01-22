@@ -14,3 +14,7 @@ assembler:
   {{assembler}}
 workdir:
   {{workdir}}
+script_path:
+  {{script_path}}
+ptf:
+  {{ptf}}

@@ -95,6 +95,7 @@ class RunCoreugate(Command):
         '''
         check chewbbaca version -> needs to be 2.0.16
         '''
+        # self.logger.info(f'Checking if chewBACCA is installed.')
         try:
             chewie_version = self.check_version('chewBBACA.py')
             base_version = Version("2.0.16")
@@ -109,15 +110,25 @@ class RunCoreugate(Command):
     
 
         
-    def check_assemblers(self, assembler):
+    def check_assemblers(self):
         '''
         check assemblers
         '''
-        
-        tocheck = self.assembler.split('-')[-1] if 'shovill' in self.assembler else self.assembler.split('-')[0]
-        
+        self.logger.info(f'Checking that {self.assembler} is installed.')
+        tocheck = 'shovill' if 'shovill' in self.assembler else self.assembler
         asmb_version = self.check_version(tocheck)
         
+    def run_checks(self):
+        
+        if self.run_with_singularity:
+            self.logger.info(f"You are using singularity containers. Good luck")           
+        else:
+            self.check_chewbbaca()
+        
+        if not self.run_with_singularity and self.input_type == 'READS':
+            self.check_assemblers()
+
+
     def link_inputs(self, data_source, isolate_id, data_name):
         '''
         check if read source exists if so check if target exists - if not create isolate dir and link. If already exists report that a dupilcation may have occured in input and procedd
@@ -234,34 +245,35 @@ class RunCoreugate(Command):
             ptf_string = ''
         self.logger(f"Setting up specific workflow")        
         # read the config file which is written with jinja2 placeholders (like django template language)
+        template_dir = f"{pathlib.Path(self.resources, 'templates')}"
         config_template = jinja2.Template(pathlib.Path(template_dir, 'config.yaml').read_text())
         config = job_directory / 'config.yaml'
         
-        config.write_text(config_template.render(isolates = self.isolates, data_type = self.input_type, min_contig_size = self.min_contig_size, min_contigs = self.min_contigs,cpu=self.threads, schemPath = self.schema_path,workdir = self.workdir))
+        config.write_text(config_template.render(isolates = self.isolates, data_type = self.input_type, min_contig_size = self.min_contig_size, min_contigs = self.min_contigs,cpu=self.threads, schemaPath = self.schema_path,workdir = self.workdir, ptf = ptf_string))
         
-        self.log_messages('info',f"Config file successfully created")
-        template_dir = f"{pathlib.Path(self.resources, 'templates')}"
-        rfile_template = jinja2.Template(pathlib.Path(template_dir, 'distances.R').read_text())
-        rfile = 'distances.R'
-        rfile.write_text(rfile_template.render(script_dir = template_dir))
+        self.logger.info(f"Config file successfully created")
+        # template_dir = f"{pathlib.Path(self.resources, 'templates')}"
+        # rfile_template = jinja2.Template(pathlib.Path(template_dir, 'distances.R').read_text())
+        # rfile = 'distances.R'
+        # rfile.write_text(rfile_template.render(script_dir = template_dir))
 
+    def setup_pipeline(self):
+        
+        self.setup_working_directory()
+        self.write_workflow()
 
-
-
-    def run_workflow(self, workdir, singularity):
+    def run_workflow(self):
         '''
         run Coreugate
         set the current directory to working dir for correct running of pipeline if singularity = Y then run with singularity
         if the pipeline wroks, return True else False
         '''
-
-        os.chdir(workdir)
         
         if singularity == 'Y':
-            cmd = f"snakemake --use-singularity --singularity-args '--bind /home'"
+            cmd = f"snakemake -s {pathlib.Path(self.resources, 'templates', 'Snakefile')} --use-singularity --singularity-args '--bind /home' -d {self.workdir}"
         else:
-            cmd = f"snakemake"
-        self.log_messages('info', f"Running {cmd}")
+            cmd = f"snakemake -s {pathlib.Path(self.resources, 'templates', 'Snakefile')} -d {self.workdir}"
+        self.logger.info(f"Running {cmd} - patient you must be.")
         wkf = subprocess.run(cmd, shell = True)
         if wkf.returncode == 0:
             return True
@@ -272,6 +284,17 @@ class RunCoreugate(Command):
         '''
         final message at completion of workflow. If workflow goes to completion print 'thanks for coming message'
         '''
-        self.log_messages('info', f"COREugate has finished.")
-        self.log_messages('info', f"Have a nice day. Come back soon.") 
-        self.log_messages('info',f"{60 * '='}")
+        output_stats = self.workdir / 'overall_statistics.tsv'
+        output_alleles = self.workdir / 'overall_alleles.tsv'
+        if output_stats.exists() and output_alleles.exists():
+            self.logger.info(f"COREugate has finished.")
+            self.logger.info(f"May the force be with you.") 
+        else:
+            self.logger.warning(f"Something has gone wrong, please check logs and try again. If problem persists, contact developer.")
+        
+    def run_pipeline():
+
+        self.run_checks()
+        self.setup_pipeline()
+        if self.run_workflow():
+            self.finish_workflow()
