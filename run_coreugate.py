@@ -12,10 +12,10 @@ def run_pipeline(args):
     '''
     Run the pipeline
     '''
-    C = Coreugate.RunCoreugate(args)
+    C = RunCoreugate(args)
     return(C.run_pipeline())
 
-def set_parser():
+def set_parsers():
     # setup the parser
   
     parser = configargparse.ArgumentParser(description='Coreugate - a cgMLST pipeline implementing chewBACCA',formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
@@ -26,7 +26,7 @@ def set_parser():
         default = '')
     parser.add_argument('--schema_path',
         '-sp',
-        help='Path to species schema/allele db'
+        help='Path to species schema/allele db',
         default = '')
     parser.add_argument('--min_contig_size', 
         '-c', 

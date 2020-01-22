@@ -10,6 +10,7 @@ data_type = config['data_type']
 # CPU
 chewieCPU = config['chewieCPU']
 
+
 SAMPLES = config['isolates'].split()
 
 # generate the output folder and symlinks to reads
@@ -58,10 +59,10 @@ rule chewBBACA:
     chewieCPU=int option: cpus used for AlleleCall (default: 36)
     """
     input:
-        isolate ="CONTIGS/{sample}/{sample}.fa",
+        isolate ="CONTIGS/{sample}/contigs.fa",
         
     output:
-        "{sample}/results_statistics.tsv", "{sample}/results_alleles.tsv"
+        "{sample}/results_statistics.tsv", "{sample}/results_alleles.tsv", 'isolates.txt'
     message:
         'Running chewBBACA, please be patient'
     resources:
@@ -72,11 +73,11 @@ rule chewBBACA:
         ptf = config['ptf'],
         schema = config['schemaPath'],
         chewieCPU = config['chewieCPU']
-    log: "coreugate.log"
+    # log: "coreugate.log"
     shell:
        	"""
-        chewBBACA.py AlleleCall -i {input.isolate} -g {params.schema} -o chew_temp/ --cpu {chewieCPU} --fc {params.ptf} 2> {log}
-        echo {wildcards.sample} >> isolates.txt
+        chewBBACA.py AlleleCall -i {input.isolate} -g {params.schema} -o chew_temp/ --cpu {chewieCPU} --fc {params.ptf} 
+        echo {wildcards.sample} >> {output[2]}
         mv chew_temp/*/* {wildcards.sample}/
         rm -r chew_temp
 
@@ -92,12 +93,12 @@ rule combinechewie:
         'overall_statistics.tsv', 'overall_alleles.tsv'
     message:
         'Combining chewBBACA results.'
-    log: "coreugate.log"
+    # log: "coreugate.log"
     params:
         script_path= config['script_path']
     shell:
         """
-        python3 {params.script_path}/combine_chewie.py {input} 2&>1 {log}
+        python3 {params.script_path}/combine_chewie.py {input}
         """
         
 rule pairwise_dist:

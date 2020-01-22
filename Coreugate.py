@@ -9,11 +9,12 @@ import numpy
 import itertools
 import subprocess
 import pathlib
+import re
 from Bio import SeqIO, Phylo
-from packaging import version
+from packaging.version import Version
 
 
-class RunCoreugate(Command):
+class RunCoreugate:
 
 
     def __init__(self,args):
@@ -32,16 +33,24 @@ class RunCoreugate(Command):
         self.logger.addHandler(fh)
 
         # set up files
-        self.input_file = self._check_file(args.input_file)
+        if args.input_file == '':
+            self.logger.warning(f"input_file can not be empty. Please check your inputs and try again.") 
+            raise SystemExit
+        else:
+            self.input_file = self._check_file(args.input_file) 
         self.input_type = self._input_type()
-        self.schema_path = self._check_file(args.schema_path)
+        if args.schema_path == '':
+            self.logger.warning(f"schema_path can not be empty. Please check your inputs and try again.") 
+            raise SystemExit
+        else:
+            self.schema_path = self._check_file(args.schema_path) 
         self.min_contig_size = args.min_contig_size
         self.min_contigs = args.min_contigs
         self.assembler = args.assembler
         self.prodigal_training = args.prodigal_training
         self.run_with_singularity = args.singularity
         self.singularity_path = args.singularity_path
-        self.workdir = args.workdir
+        self.workdir = self._check_file(args.workdir)
         self.resources = args.resources
         self.threads = args.threads
 
@@ -65,8 +74,10 @@ class RunCoreugate(Command):
         """
         tab = pandas.read_csv(self.input_file, sep = '\t')
         if tab.shape[1] == 2:
+            self.logger.info(f"You are running COREugate with from assemblies.")
             return "CONTIGS"
         elif tab.shape[1] == 3:
+            self.logger.info(f"You are running COREugate with from reads.")
             return "READS"
         else:
             self.logger.warning(f"Sorry but your input file is incorrectly foramtted, delimiter should be a tab and it should contain only 2 or 3 columns (contigs or reads respoectively). Please check and try again.")
@@ -77,12 +88,14 @@ class RunCoreugate(Command):
         check version of software installed, if chewbbaca add string
         :software: name of software (str)
         '''
-        self.logger.info(f"Checking that {software} is installed and recording version.")
+        # self.logger.info(f"Checking that {software} is installed and recording version.")
         version_pat = re.compile(r'\bv?(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<release>[0-9]+)(?:\.(?P<build>[0-9]+))?\b')
         try:
-            sft = subprocess.run([software, '--version'], capture_output = True, encoding = 'utf-8')
-            sft = sft.stderr.strip()
-            sft_version = version_pat.search(sft)
+            cmd = f"{software} --version"
+            self.logger.info(f"Checking that {software} is installed and recording version : {cmd}")
+            sft = subprocess.run(cmd, shell = True, capture_output = True, encoding = 'utf-8')
+            sft = sft.stdout.strip()
+            sft_version = version_pat.match(sft).group()
             self.logger.info(f"{software} {sft_version} found. Good job!")
             return sft_version
         except FileNotFoundError:
@@ -164,16 +177,16 @@ class RunCoreugate(Command):
         '''
         self.logger.info(f"Checking that all the data files exist.")
         pos_1 = 'R1.fq.gz' if self.input_type == 'READS' else 'contigs.fa'
-        for i in tab.itertuples():
-            
-            if not '#' in i[1]:
-                r1 = i[2]
+        for i in tab.iterrows():
+            # print(i[1][0])
+            if not '#' in i[1][0]:
+                r1 = i[1][1]
                 self._check_file(r1)
-                self.link_inputs(pathlib.Path(r1), isolate_id=f"{i[1].strip()}", r_pair=pos_1)
-                if len(i) > 2:
-                    r2 = i[3]
+                self.link_inputs(pathlib.Path(r1), isolate_id=f"{i[1][0].strip()}", data_name=pos_1)
+                if self.input_type == 'READS':
+                    r2 = i[1][2]
                     self._check_file(pathlib.Path(r2), v = False)
-                    self.link_reads(pathlib.Path(r2), isolate_id=f"{i[1].strip()}", r_pair='R2.fq.gz')
+                    self.link_reads(pathlib.Path(r2), isolate_id=f"{i[1][0].strip()}", data_name='R2.fq.gz')
         return True
 
     
@@ -200,13 +213,13 @@ class RunCoreugate(Command):
                 subprocess.call(['rm', short_path / f / '*'])
                 subprocess.call(['rm', self.schema_path / f / '*'])
         # if temp exists remove it
-        if os.path.exists(path / 'temp'):
+        if os.path.exists(self.schema_path / 'temp'):
             subprocess.call(['rm', '-r',  str(self.schema_path/ 'temp')])
         
    
-    def link_schema():
+    def link_schema(self):
 
-        target = self.schema_path.name
+        target = pathlib.Path(self.schema_path.name)
         source = self.schema_path
         self.prep_external_schema()
 
@@ -231,7 +244,8 @@ class RunCoreugate(Command):
         # set up data directory                
         # link input data to input directory
         self.logger.info(f"Linking source data to working directory")
-        tab = pandas.read_csv(self.input_file, sep = '\t')
+        tab = pandas.read_csv(self.input_file, sep = '\t', header = None)
+        print(tab)
         self.check_inputs_exists(tab = tab)
         self.isolates = ' '.join(list(tab.iloc[ : , 0]))
 
@@ -243,11 +257,11 @@ class RunCoreugate(Command):
             ptf_string = f"--ptf {self.prodigal_training}"
         else:
             ptf_string = ''
-        self.logger(f"Setting up specific workflow")        
+        self.logger.info(f"Setting up specific workflow")        
         # read the config file which is written with jinja2 placeholders (like django template language)
         template_dir = f"{pathlib.Path(self.resources, 'templates')}"
         config_template = jinja2.Template(pathlib.Path(template_dir, 'config.yaml').read_text())
-        config = job_directory / 'config.yaml'
+        config = self.workdir /'config.yaml'
         
         config.write_text(config_template.render(isolates = self.isolates, data_type = self.input_type, min_contig_size = self.min_contig_size, min_contigs = self.min_contigs,cpu=self.threads, schemaPath = self.schema_path,workdir = self.workdir, ptf = ptf_string))
         
@@ -269,7 +283,7 @@ class RunCoreugate(Command):
         if the pipeline wroks, return True else False
         '''
         
-        if singularity == 'Y':
+        if self.run_with_singularity:
             cmd = f"snakemake -s {pathlib.Path(self.resources, 'templates', 'Snakefile')} --use-singularity --singularity-args '--bind /home' -d {self.workdir}"
         else:
             cmd = f"snakemake -s {pathlib.Path(self.resources, 'templates', 'Snakefile')} -d {self.workdir}"
@@ -292,7 +306,7 @@ class RunCoreugate(Command):
         else:
             self.logger.warning(f"Something has gone wrong, please check logs and try again. If problem persists, contact developer.")
         
-    def run_pipeline():
+    def run_pipeline(self):
 
         self.run_checks()
         self.setup_pipeline()
