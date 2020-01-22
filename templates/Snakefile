@@ -1,108 +1,82 @@
-import os, subprocess, pathlib
-{% raw %}
-
 # set path to config file
 configfile:'config.yaml'
 # set the working directory to the job_id from config file
-# workdir: config['workdir']
+# def get_samples(data_type):
+    
 # configs variables
 # path to schema
 schema_path = config['schemaPath']
-# from assemblies or reads if Y then run assembly if not just do qc
-ASSEMBLE = config['assemble']
-# ASSEMBLER
-assembler = config['assembler']
-
+data_type = config['data_type']
 # CPU
 chewieCPU = config['chewieCPU']
 
-
-# a list to place samples for wildcards - get wildcards from input dir - glob.wildcards
-if ASSEMBLE == 'Y':
-    r = pathlib.Path('READS')
-    SAMPLES = [i.name for i in r.iterdir()]
-else:
-    SAMPLES, = glob_wildcards('assemblies/{sample}.fa')
+SAMPLES = config['isolates'].split()
 
 # generate the output folder and symlinks to reads
 
 rule all: #
     input:
-        'overall_statistics.tsv', 'overall_alleles.tsv', 'distances.tab'
-        
-{% endraw %}
+        # expand("CONTIGS/{sample}/{sample}.fa", sample = SAMPLES),
+        expand("{sample}/results_statistics.tsv", sample = SAMPLES), 
+        expand("{sample}/results_alleles.tsv", sample = SAMPLES),
+        'overall_statistics.tsv', 'overall_alleles.tsv', 'distances.tab',
 
-{{assemble_string}}
-
-{% raw %}
-rule assembly_qc:
-    """
-    min_contigs=int options: the min number of contigs desired (default: off)
-    min_contig_size=int options: remove small contigs (default: 500)
-    """
-
-    input:
-        "assemblies/{sample}.fa"
-    output:
-        "assembliesQC/{sample}.fa"
-    message:
-        'Performing quality control of assemblies.'
-    run:
-        from Bio import SeqIO
-        from pathlib import Path
-
-        ASSEMBLY = str(input)
-        print(ASSEMBLY)
-        QC = Path("QC.txt")
-        # add logic for no min contig number
-        MIN_SIZE = config['min_contig_size']
-        MIN_CONTIGS = config['min_contigs']
-
-        records = list(SeqIO.parse(ASSEMBLY, "fasta"))
-        print(records)
-        # set a counter for contigs
-        contigs_count = 0
-
-        for record in records:
-
-            if len(record.seq) > MIN_SIZE:
-                # increment contigs count
-                contigs_count = contigs_count + 1
-                with open(str(output[0]), 'a') as out:
-                    out.write('>'+str(record.description) + '\n')
-                    out.write(str(record.seq) + '\n')
-
-        if MIN_CONTIGS == 0:
-            MIN = contigs_count + 2
-        else:
-            MIN = MIN_CONTIGS
-        name = ASSEMBLY.split('/')[-1].split('.')[0]
-        if contigs_count < MIN:
-            with open(QC, 'a') as q:
-                q.write(name + '\n')
-
+if data_type == "READS":
+    rule assemble:
+        input: 
+            r1 = 'READS/{sample}/R1.fq.gz',
+            r2 = 'READS/{sample}/R.fq.gz'
+        output:
+            'CONTIGS/{sample}/contigs.fa'
+        params:
+            assembler = config['assembler']
+        shell:
+            """
+            if [ "{params.assembler}" == "shovill-spades" ]; then
+                shovill --outdir temp --R1 {input.r1} --R2 {input.r2} --force --minlen 200
+                cp temp/contigs.fa {output}
+                rm -r temp
+            elif [ "{params.assembler}" == "shovill-skesa" ]; then
+                shovill --outdir temp --R1 {input.r1} --R2 {input.r2} --force --minlen 200 --assembler skesa 
+                cp temp/contigs.fa {output}
+                rm -r temp
+            elif [ "{params.assembler}" == "skesa" ]; then
+                skesa --fastq {input.r1},{input.r2} --vector_percent 1 --use_paired_ends --cores 4 > {output}
+            elif [ "{params.assembler}" == "spades" ]; then
+                spades.py -o temp/ -1 {input.r1} -2 {input.r2}
+                cp temp/contigs.fasta {output}
+                rm -r temp
+            fi
+            """
 
 
 rule chewBBACA:
     """
-    Prepare external schema (if needed) and perform AlleleCall
+    Perform AlleleCall
     schemaPath=str COMPULSORY path the folder containing cgMLST schema
     prepCPU=int option: cpus used for PrepExternalSchema (default: 36)
     chewieCPU=int option: cpus used for AlleleCall (default: 36)
     """
     input:
-        isolate ="assembliesQC/{sample}.fa",
-        schema = schema_path
+        isolate ="CONTIGS/{sample}/{sample}.fa",
+        
     output:
-        directory('chewBBACA/{sample}')
+        "{sample}/results_statistics.tsv", "{sample}/results_alleles.tsv"
+    message:
+        'Running chewBBACA, please be patient'
     resources:
         wget_limit=1
     singularity:
         "shub://phgenomics-singularity/chewbbaca_singularity@latest"
+    params:
+        ptf = config['ptf'],
+        schema = config['schemaPath'],
+        chewieCPU = config['chewieCPU']
     shell:
        	"""
-        chewBBACA.py AlleleCall -i {input.isolate} -g {input.schema} -o chew_temp/ --cpu {chewieCPU} --fc {% endraw %} {{ptf}} {% raw %}
-        mv chew_temp/*/ {output}
+        chewBBACA.py AlleleCall -i {input.isolate} -g {params.schema} -o chew_temp/ --cpu {chewieCPU} --fc {params.ptf}
+        echo {wildcards.sample} >> isolates.txt
+        mv chew_temp/*/* {wildcards.sample}/
         rm -r chew_temp
 
         """
@@ -112,7 +86,7 @@ rule combinechewie:
     No need anything here!
     """
     input:
-        expand("chewBBACA/{sample}", sample = SAMPLES)
+        'isolates.txt'
     output:
         'overall_statistics.tsv', 'overall_alleles.tsv'
     message:
@@ -121,39 +95,33 @@ rule combinechewie:
         import os
         import pathlib
 
-        qc = pathlib.Path("QC.txt")
-        # open qc results - a list of isolates that passed QC
-        q = [i.strip() for i in qc.open()]
         out_alleles = pathlib.Path(str(output[1]))
         out_stats = pathlib.Path(str(output[0]))
         for i in input:
-            # check for the isolates to include
-            check = i.split('/')[-1]
-            if check in q:
-                p = pathlib.Path(i)
-                for f in p.iterdir():
-                    if f.name == 'results_statistics.tsv':
-                        stat = open(f, 'r')
-                        if not out_stats.exists():
-                            with open(out_stats, 'w') as out:
-                                for l in stat.readlines():
-                                    out.write(l)
-                                out.write('\n')
-                        else:
-                            with open(out_stats, 'a') as out:
-                                out.write(stat.readlines()[1])
-                                out.write('\n')
-                    if f.name == 'results_alleles.tsv':
-                        allele = open(f, 'r')
-                        if not os.path.exists(output[1]):
-                            with open(output[1], 'w') as out:
-                                for l in allele.readlines():
-                                    out.write(l)
-                                out.write('\n')
-                        else:
-                            with open(output[1], 'a') as out:
-                                out.write(allele.readlines()[1])
-                                out.write('\n')
+            p = pathlib.Path(i)
+            for f in p.iterdir():
+                if f.name == 'results_statistics.tsv':
+                    stat = open(f, 'r')
+                    if not out_stats.exists():
+                        with open(out_stats, 'w') as out:
+                            for l in stat.readlines():
+                                out.write(l)
+                            out.write('\n')
+                    else:
+                        with open(out_stats, 'a') as out:
+                            out.write(stat.readlines()[1])
+                            out.write('\n')
+                if f.name == 'results_alleles.tsv':
+                    allele = open(f, 'r')
+                    if not os.path.exists(output[1]):
+                        with open(output[1], 'w') as out:
+                            for l in allele.readlines():
+                                out.write(l)
+                            out.write('\n')
+                    else:
+                        with open(output[1], 'a') as out:
+                            out.write(allele.readlines()[1])
+                            out.write('\n')
 
 rule pairwise_dist:
     input:
@@ -165,4 +133,3 @@ rule pairwise_dist:
         Rscript distances.R
         """
 
-{% endraw %}

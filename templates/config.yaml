@@ -1,5 +1,5 @@
-assembler:
-  {{assembler}}
+isolates:
+  {{isolates}}
 min_contig_size:
   {{min_contig_size}}
 min_contigs:
@@ -8,7 +8,9 @@ chewieCPU:
   {{cpu}}
 schemaPath:
   {{schemPath}}
-assemble:
-  {{assemble}}
+data_type:
+  {{data_type}}
+assembler:
+  {{assembler}}
 workdir:
   {{workdir}}
